@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <style>
 /* =========================================================
    COLORES (modo claro y oscuro)
@@ -214,7 +214,7 @@ const SIN = CONFIG.textoSinProduccion;
 const GRAPH = "https://graph.microsoft.com/v1.0";
 const ESCOPOS = ["User.Read", "Files.ReadWrite.All"];
 
-let msal = null, cuenta = null, rutaLibro = null;
+let clienteMsal = null, cuenta = null, rutaLibro = null;
 let largos = CONFIG.largosRespaldo.slice();
 let pestanaActual = 0;
 let datosHoja = {};        // hoja -> { filaInicio, valores }
@@ -259,7 +259,7 @@ function estado(texto, tipo){
 
 /* ---------- Inicio de sesión con Microsoft ---------- */
 async function iniciarMsal(){
-  msal = new msalBrowser.PublicClientApplication({
+  clienteMsal = new window.msal.PublicClientApplication({
     auth:{
       clientId: CONFIG.clientId,
       authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
@@ -267,17 +267,17 @@ async function iniciarMsal(){
     },
     cache:{ cacheLocation:"localStorage" }
   });
-  if (msal.initialize) await msal.initialize();
-  const r = await msal.handleRedirectPromise();
-  cuenta = r ? r.account : (msal.getAllAccounts()[0] || null);
-  if (cuenta) msal.setActiveAccount(cuenta);
+  if (clienteMsal.initialize) await clienteMsal.initialize();
+  const r = await clienteMsal.handleRedirectPromise();
+  cuenta = r ? r.account : (clienteMsal.getAllAccounts()[0] || null);
+  if (cuenta) clienteMsal.setActiveAccount(cuenta);
 }
 async function token(){
   try{
-    const r = await msal.acquireTokenSilent({ scopes:ESCOPOS, account:cuenta });
+    const r = await clienteMsal.acquireTokenSilent({ scopes:ESCOPOS, account:cuenta });
     return r.accessToken;
   }catch(e){
-    await msal.acquireTokenRedirect({ scopes:ESCOPOS, account:cuenta });
+    await clienteMsal.acquireTokenRedirect({ scopes:ESCOPOS, account:cuenta });
     throw new Error("Redirigiendo para iniciar sesión…");
   }
 }
@@ -505,12 +505,12 @@ async function iniciar(){
     $("bloqueFecha").classList.add("oculto");
     $("pestanas").classList.add("oculto");
     $("pantallaLogin").classList.remove("oculto");
-    $("btnLogin").onclick = () => msal.loginRedirect({ scopes:ESCOPOS });
+    $("btnLogin").onclick = () => clienteMsal.loginRedirect({ scopes:ESCOPOS });
     return;
   }
 
   $("zonaUsuario").innerHTML = `<span>${cuenta.name || cuenta.username}</span><button class="btn-claro" id="btnSalir">Salir</button>`;
-  $("btnSalir").onclick = () => msal.logoutRedirect({ account:cuenta });
+  $("btnSalir").onclick = () => clienteMsal.logoutRedirect({ account:cuenta });
 
   try{
     await ubicarLibro();
