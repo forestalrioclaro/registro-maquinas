@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <style>
 /* =========================================================
    COLORES (modo claro y oscuro)
@@ -147,7 +146,7 @@ main{max-width:880px;margin:0 auto;padding:20px}
   <div class="cabecera">
     <div class="fila-top">
       <h1>Registro diario de máquinas</h1>
-      <div class="usuario" id="zonaUsuario"></div>
+      
     </div>
     <div class="fecha-bloque" id="bloqueFecha">
       <label for="fecha">Fecha</label>
@@ -159,11 +158,6 @@ main{max-width:880px;margin:0 auto;padding:20px}
 
 <main>
   <div id="avisos"></div>
-
-  <section class="login oculto" id="pantallaLogin">
-    <p>Ingresa con tu cuenta de Forestal Río Claro para registrar lo que procesa cada máquina hoy.</p>
-    <button class="btn-guardar" id="btnLogin">Ingresar con Microsoft</button>
-  </section>
 
   <section id="pantallaRegistro" class="oculto">
     <p class="resumen" id="resumen"></p>
@@ -179,67 +173,40 @@ main{max-width:880px;margin:0 auto;padding:20px}
 <script>
 /* =========================================================
    CONFIGURACIÓN  —  ESTO ES LO ÚNICO QUE DEBES EDITAR
+   Pega aquí la "URL de la aplicación web" de Apps Script (termina en /exec).
+   Las pestañas, máquinas y largos se editan en Codigo.gs, no aquí.
    ========================================================= */
-const CONFIG = {
-  // Datos que entrega el área de TI al registrar la aplicación en Microsoft Entra ID (Azure).
-  // Mientras estén vacíos, la página funciona en MODO DEMO (no guarda nada).
-  clientId: "b04227ca-d831-4106-bb34-5ca0e3d6ad8e",          // "Id. de aplicación (cliente)"
-  tenantId: "e6a9fe75-a075-4e8a-823e-64f05b120dc0",          // "Id. de directorio (inquilino)"
-
-  // Enlace al Excel en OneDrive (sin el ?web=1 del final)
-  archivoExcel: "https://gfrc-my.sharepoint.com/personal/isilva_gfrc_cl/Documents/InformesBI/Detalle%20maquina%20por%20dia.xlsx",
-
-  // Hoja del Excel donde están los largos permitidos (columna A, con encabezado)
-  hojaLargos: "Largos",
-
-  // Pestañas: el nombre de cada una debe ser IGUAL al nombre de la hoja en el Excel.
-  // Para agregar o quitar máquinas, edita estas listas.
-  pestanas: [
-    { hoja: "Polineras",  maquinas: ["Polinera 01","Polinera 02","Polinera 03","Polinera 04","Polinera 05","Polinera 06","Polinera 07","Polinera 08","Polinera 09"] },
-    { hoja: "Morbark",    maquinas: ["Morbark 01","Morbark 02","Morbark 03","Morbark 04","Morbark 06","Morbark 07","Morbark 08","Morbark 09"] },
-    { hoja: "Cilindrado", maquinas: ["Cilindrado 01","Cilindrado 02","Cilindrado 03","Cilindrado 04","Cilindrado 05","Cilindrado 06","Cilindrado 07","Cilindrado 08","Cilindrado 09"] },
-    { hoja: "Postes",     maquinas: ["Poste 01","Poste 02","Poste 03","Poste 04","Morbark 05"] }
-  ],
-
-  // Texto que se guarda cuando la máquina no está en uso (igual al que ya usas en el Excel)
-  textoSinProduccion: "Sin produccion",
-
-  // Largos de respaldo, por si no se pudiera leer la hoja "Largos"
-  largosRespaldo: [2.4,3,3.3,3.5,4,4.5,5,5.5,6,7,7.7,8,9,10,11,12,13,14,15]
-};
+const URL_API = "https://script.google.com/macros/s/AKfycbwIznCxiVJh47D1WyLlV3PM3oUe0IfwABAqDS6FZjIYtvaLDjoBHMtz9419aYhkNJoO/exec";
 /* ========================================================= */
 
-const MODO_DEMO = !CONFIG.clientId || !CONFIG.tenantId;
-const SIN = CONFIG.textoSinProduccion;
-const GRAPH = "https://graph.microsoft.com/v1.0";
-const ESCOPOS = ["User.Read", "Files.ReadWrite.All"];
-
-let clienteMsal = null, cuenta = null, rutaLibro = null;
-let largos = CONFIG.largosRespaldo.slice();
+let DATOS = null;     // pestañas, máquinas y largos que entrega la planilla
+let SIN = "Sin produccion";
 let pestanaActual = 0;
-let datosHoja = {};        // hoja -> { filaInicio, valores }
-let seleccion = {};        // hoja -> { maquina: valor }
-let guardadas = {};        // hoja -> true si la fecha ya está registrada en el Excel
+let seleccion = {};   // hoja -> { maquina: valor }
+let guardadas = {};   // hoja -> true si la fecha ya está registrada
 
 const $ = id => document.getElementById(id);
 
-/* ---------- Utilidades de fecha (Excel guarda fechas como números) ---------- */
+/* Conversa con la planilla de Google (Codigo.gs) */
+async function api(parametros, cuerpo){
+  const opciones = cuerpo
+    ? { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify(cuerpo) }
+    : { method:"GET" };
+  const url = cuerpo ? URL_API : URL_API + "?" + new URLSearchParams(parametros);
+  let r;
+  try{ r = await fetch(url, opciones); }
+  catch(e){ throw new Error("Sin conexión con la planilla. Revisa tu internet e inténtalo de nuevo"); }
+  let j;
+  try{ j = await r.json(); }
+  catch(e){ throw new Error("La planilla respondió algo inesperado (revisa que la URL termine en /exec y que el acceso sea «Cualquier usuario»)"); }
+  if (!j.ok) throw new Error(j.error || "Error desconocido");
+  return j.datos;
+}
+
+/* ---------- Utilidades ---------- */
 function hoyISO(){
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
-function isoASerial(iso){
-  const [y,m,d] = iso.split("-").map(Number);
-  return Math.round((Date.UTC(y,m-1,d) - Date.UTC(1899,11,30)) / 86400000);
-}
-function celdaASerial(v){
-  if (typeof v === "number") return Math.floor(v);
-  if (typeof v === "string"){
-    const m = v.trim().match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
-    if (m) return isoASerial(`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`);
-    const n = Number(v); if (!isNaN(n)) return Math.floor(n);
-  }
-  return null;
 }
 function fechaLarga(iso){
   const [y,m,d] = iso.split("-").map(Number);
@@ -249,7 +216,6 @@ const mostrarLargo = v => `${String(v).replace(".", ",")} m`;
 const normalizar = v => (v === null || v === undefined || v === "") ? "" :
   (String(v).trim().toLowerCase() === SIN.toLowerCase() ? SIN : String(Number(v)));
 
-/* ---------- Avisos ---------- */
 function aviso(texto, tipo){
   $("avisos").innerHTML = texto ? `<div class="aviso ${tipo||""}">${texto}</div>` : "";
 }
@@ -257,82 +223,9 @@ function estado(texto, tipo){
   const e = $("estado"); e.textContent = texto || ""; e.className = "estado " + (tipo||"");
 }
 
-/* ---------- Inicio de sesión con Microsoft ---------- */
-async function iniciarMsal(){
-  clienteMsal = new window.msal.PublicClientApplication({
-    auth:{
-      clientId: CONFIG.clientId,
-      authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
-      redirectUri: window.location.origin + window.location.pathname
-    },
-    cache:{ cacheLocation:"localStorage" }
-  });
-  if (clienteMsal.initialize) await clienteMsal.initialize();
-  const r = await clienteMsal.handleRedirectPromise();
-  cuenta = r ? r.account : (clienteMsal.getAllAccounts()[0] || null);
-  if (cuenta) clienteMsal.setActiveAccount(cuenta);
-}
-async function token(){
-  try{
-    const r = await clienteMsal.acquireTokenSilent({ scopes:ESCOPOS, account:cuenta });
-    return r.accessToken;
-  }catch(e){
-    await clienteMsal.acquireTokenRedirect({ scopes:ESCOPOS, account:cuenta });
-    throw new Error("Redirigiendo para iniciar sesión…");
-  }
-}
-async function graph(ruta, opciones = {}){
-  const t = await token();
-  const r = await fetch(GRAPH + ruta, {
-    ...opciones,
-    headers:{ "Authorization":"Bearer " + t, "Content-Type":"application/json", ...(opciones.headers||{}) }
-  });
-  if (!r.ok){
-    let detalle = ""; try{ detalle = (await r.json()).error.message; }catch(_){}
-    const err = new Error(detalle || ("Error " + r.status)); err.status = r.status; throw err;
-  }
-  return r.status === 204 ? null : r.json();
-}
-
-/* ---------- Acceso al Excel ---------- */
-function codificarEnlace(url){
-  const b64 = btoa(unescape(encodeURIComponent(url))).replace(/=+$/,"").replace(/\//g,"_").replace(/\+/g,"-");
-  return "u!" + b64;
-}
-async function ubicarLibro(){
-  const item = await graph(`/shares/${codificarEnlace(CONFIG.archivoExcel)}/driveItem?$select=id,parentReference`);
-  rutaLibro = `/drives/${item.parentReference.driveId}/items/${item.id}/workbook`;
-}
-const hojaURL = h => `${rutaLibro}/worksheets('${encodeURIComponent(h)}')`;
-
-async function leerHoja(hoja){
-  if (MODO_DEMO) return datosHoja[hoja] || { filaInicio:1, valores:[["Fecha","Maquina","Formato"]] };
-  const r = await graph(`${hojaURL(hoja)}/usedRange(valuesOnly=true)?$select=address,values`);
-  const inicio = Number((r.address.split("!")[1] || "A1").match(/\d+/)[0]);
-  return { filaInicio: inicio, valores: r.values };
-}
-async function leerLargos(){
-  if (MODO_DEMO) return;
-  try{
-    const r = await graph(`${hojaURL(CONFIG.hojaLargos)}/usedRange(valuesOnly=true)?$select=values`);
-    const lista = r.values.slice(1).map(f => f[0]).filter(v => v !== "" && !isNaN(Number(v))).map(Number);
-    if (lista.length) largos = lista;
-  }catch(e){ /* se usan los largos de respaldo */ }
-}
-
-/* Busca en la hoja las filas ya registradas para la fecha elegida */
-function filasDeLaFecha(datos, serial){
-  const mapa = {};
-  datos.valores.forEach((fila, i) => {
-    if (i === 0) return; // encabezado
-    if (celdaASerial(fila[0]) === serial && fila[1]) mapa[String(fila[1]).trim()] = { fila: datos.filaInicio + i, valor: fila[2] };
-  });
-  return mapa;
-}
-
 /* ---------- Pantalla ---------- */
 function dibujarPestanas(){
-  $("pestanas").innerHTML = CONFIG.pestanas.map((p,i) =>
+  $("pestanas").innerHTML = DATOS.pestanas.map((p,i) =>
     `<button role="tab" aria-selected="${i===pestanaActual}" data-i="${i}">
        <span class="punto ${guardadas[p.hoja] ? "ok" : ""}" aria-hidden="true"></span>${p.hoja}
      </button>`).join("");
@@ -341,10 +234,10 @@ function dibujarPestanas(){
 }
 
 function dibujarMaquinas(){
-  const p = CONFIG.pestanas[pestanaActual];
+  const p = DATOS.pestanas[pestanaActual];
   const sel = seleccion[p.hoja] || {};
   const opciones = `<option value="">Elegir largo…</option>` +
-    largos.map(l => `<option value="${String(Number(l))}">${mostrarLargo(l)}</option>`).join("") +
+    DATOS.largos.map(l => `<option value="${String(Number(l))}">${mostrarLargo(l)}</option>`).join("") +
     `<option value="${SIN}">Sin producción</option>`;
 
   $("listaMaquinas").innerHTML = p.maquinas.map((m, i) => {
@@ -359,14 +252,14 @@ function dibujarMaquinas(){
   $("listaMaquinas").querySelectorAll(".maquina").forEach(li => {
     const m = li.dataset.m, s = li.querySelector("select"), b = li.querySelector(".btn-parar");
     s.value = sel[m] || "";
-    s.onchange = () => { fijar(m, s.value); };
-    b.onclick = () => { const nuevo = (seleccion[p.hoja][m] === SIN) ? "" : SIN; fijar(m, nuevo); };
+    s.onchange = () => fijar(m, s.value);
+    b.onclick = () => fijar(m, (seleccion[p.hoja][m] === SIN) ? "" : SIN);
   });
   actualizarResumen();
 }
 
 function fijar(maquina, valor){
-  const hoja = CONFIG.pestanas[pestanaActual].hoja;
+  const hoja = DATOS.pestanas[pestanaActual].hoja;
   seleccion[hoja] = seleccion[hoja] || {};
   seleccion[hoja][maquina] = valor;
   const li = [...$("listaMaquinas").children].find(x => x.dataset.m === maquina);
@@ -380,88 +273,51 @@ function fijar(maquina, valor){
 }
 
 function actualizarResumen(){
-  const p = CONFIG.pestanas[pestanaActual];
+  const p = DATOS.pestanas[pestanaActual];
   const sel = seleccion[p.hoja] || {};
   const llenas = p.maquinas.filter(m => sel[m]).length;
   const paradas = p.maquinas.filter(m => sel[m] === SIN).length;
-  const fecha = $("fecha").value;
-  let t = `${fechaLarga(fecha)}. ${llenas} de ${p.maquinas.length} máquinas con dato`;
+  let t = `${fechaLarga($("fecha").value)}. ${llenas} de ${p.maquinas.length} máquinas con dato`;
   if (paradas) t += `, ${paradas} sin producción`;
   t += guardadas[p.hoja] ? ". Este día ya está registrado; si cambias algo y guardas, se actualiza." : ".";
   $("resumen").textContent = t;
 }
 
 async function cargarPestana(){
-  const p = CONFIG.pestanas[pestanaActual];
+  const p = DATOS.pestanas[pestanaActual];
   $("listaMaquinas").innerHTML = "";
   $("resumen").textContent = "Cargando máquinas…";
+  aviso("");
   try{
-    const datos = await leerHoja(p.hoja);
-    datosHoja[p.hoja] = datos;
-    const existentes = filasDeLaFecha(datos, isoASerial($("fecha").value));
+    const existentes = await api({ accion:"leer", hoja:p.hoja, fecha:$("fecha").value });
     seleccion[p.hoja] = {};
-    p.maquinas.forEach(m => { seleccion[p.hoja][m] = existentes[m] ? normalizar(existentes[m].valor) : ""; });
+    p.maquinas.forEach(m => { seleccion[p.hoja][m] = m in existentes ? normalizar(existentes[m]) : ""; });
     guardadas[p.hoja] = Object.keys(existentes).length > 0;
     dibujarPestanas();
     dibujarMaquinas();
   }catch(e){
     $("resumen").textContent = "";
-    aviso(`No se pudo leer la hoja <b>${p.hoja}</b> del Excel: ${e.message}. Revisa que tengas permiso de edición sobre el archivo.`);
+    aviso(`No se pudo leer la hoja <b>${p.hoja}</b>: ${e.message}.`);
   }
 }
 
-/* ---------- Guardar en el Excel ---------- */
+/* ---------- Guardar ---------- */
 async function guardar(){
-  const p = CONFIG.pestanas[pestanaActual];
+  const p = DATOS.pestanas[pestanaActual];
   const sel = seleccion[p.hoja] || {};
   const faltan = p.maquinas.filter(m => !sel[m]);
   if (faltan.length === p.maquinas.length){ estado("Elige un largo o «No está en uso» para al menos una máquina.", "error"); return; }
   if (faltan.length && !confirm(`Faltan ${faltan.length} máquina(s) sin dato:\n${faltan.join(", ")}\n\n¿Guardar igual las demás?`)) return;
 
   const btn = $("btnGuardar"); btn.disabled = true; estado("Guardando…");
-  const fecha = $("fecha").value, serial = isoASerial(fecha);
+  const registros = {};
+  p.maquinas.forEach(m => { if (sel[m]) registros[m] = sel[m]; });
 
   try{
-    // Se vuelve a leer la hoja justo antes de escribir, para no pisar datos de otra persona
-    const datos = await leerHoja(p.hoja);
-    const existentes = filasDeLaFecha(datos, serial);
-    let siguiente = datos.filaInicio + datos.valores.length;
-    const aActualizar = [], aAgregar = [];
-
-    p.maquinas.forEach(m => {
-      if (!sel[m]) return;
-      const formato = sel[m] === SIN ? SIN : Number(sel[m]);
-      const fila = [serial, m, formato];
-      if (existentes[m]) aActualizar.push({ fila: existentes[m].fila, valores: fila });
-      else aAgregar.push(fila);
-    });
-
-    if (MODO_DEMO){
-      aActualizar.forEach(u => { datos.valores[u.fila - datos.filaInicio] = u.valores; });
-      aAgregar.forEach(f => datos.valores.push(f));
-      datosHoja[p.hoja] = datos;
-    } else {
-      for (const u of aActualizar){
-        await graph(`${hojaURL(p.hoja)}/range(address='A${u.fila}:C${u.fila}')`, {
-          method:"PATCH", body: JSON.stringify({ values:[u.valores], numberFormat:[["dd-mm-yyyy","General","General"]] })
-        });
-      }
-      if (aAgregar.length){
-        const fin = siguiente + aAgregar.length - 1;
-        await graph(`${hojaURL(p.hoja)}/range(address='A${siguiente}:C${fin}')`, {
-          method:"PATCH", body: JSON.stringify({
-            values: aAgregar,
-            numberFormat: aAgregar.map(() => ["dd-mm-yyyy","General","General"])
-          })
-        });
-      }
-    }
-
+    const r = await api(null, { accion:"guardar", hoja:p.hoja, fecha:$("fecha").value, registros });
     guardadas[p.hoja] = true;
     dibujarPestanas(); actualizarResumen();
-    const total = aActualizar.length + aAgregar.length;
-    estado(MODO_DEMO ? `Modo demo: ${total} máquina(s) registradas solo en pantalla.` :
-                       `Guardado en el Excel: ${total} máquina(s) de ${p.hoja}.`, "ok");
+    estado(`Guardado: ${r.agregadas + r.actualizadas} máquina(s) de ${p.hoja}.`, "ok");
   }catch(e){
     estado("No se pudo guardar: " + e.message, "error");
   }finally{
@@ -470,55 +326,29 @@ async function guardar(){
 }
 
 /* ---------- Arranque ---------- */
-function mostrarRegistro(){
-  $("pantallaLogin").classList.add("oculto");
-  $("pantallaRegistro").classList.remove("oculto");
-  $("bloqueFecha").classList.remove("oculto");
-  $("pestanas").classList.remove("oculto");
-  dibujarPestanas();
-  cargarPestana();
-}
-
 async function iniciar(){
   $("fecha").value = hoyISO();
   $("fecha").onchange = () => { guardadas = {}; cargarPestana(); };
   $("btnGuardar").onclick = guardar;
   $("btnTodasParadas").onclick = () => {
     if (confirm("¿Marcar todas las máquinas de esta pestaña como sin producción?"))
-      CONFIG.pestanas[pestanaActual].maquinas.forEach(m => fijar(m, SIN));
+      DATOS.pestanas[pestanaActual].maquinas.forEach(m => fijar(m, SIN));
   };
 
-  if (MODO_DEMO){
-    aviso("<b>Modo demo.</b> Esta página aún no está conectada al Excel: puedes probarla, pero no guarda nada. Se conecta al completar <code>clientId</code> y <code>tenantId</code> en la configuración.", "info");
-    $("zonaUsuario").textContent = "Demo";
-    mostrarRegistro();
+  if (!URL_API){
+    aviso("Esta página todavía no está conectada a la planilla de Google. Falta pegar la URL de Apps Script en <code>URL_API</code>.", "info");
     return;
   }
-
+  $("resumen").textContent = "Conectando con la planilla…";
+  $("pantallaRegistro").classList.remove("oculto");
   try{
-    await iniciarMsal();
+    DATOS = await api({ accion:"config" });
+    SIN = DATOS.sinProduccion;
+    dibujarPestanas();
+    cargarPestana();
   }catch(e){
-    aviso("No se pudo iniciar el acceso con Microsoft (" + e.message + "). Presiona «Ingresar con Microsoft» para intentarlo de nuevo y, en la pantalla de permisos, elige «Aceptar».");
-    if (!clienteMsal) return;
-  }
-
-  if (!cuenta){
-    $("bloqueFecha").classList.add("oculto");
-    $("pestanas").classList.add("oculto");
-    $("pantallaLogin").classList.remove("oculto");
-    $("btnLogin").onclick = () => clienteMsal.loginRedirect({ scopes:ESCOPOS });
-    return;
-  }
-
-  $("zonaUsuario").innerHTML = `<span>${cuenta.name || cuenta.username}</span><button class="btn-claro" id="btnSalir">Salir</button>`;
-  $("btnSalir").onclick = () => clienteMsal.logoutRedirect({ account:cuenta });
-
-  try{
-    await ubicarLibro();
-    await leerLargos();
-    mostrarRegistro();
-  }catch(e){
-    aviso(`No se pudo abrir el Excel: ${e.message}. Pide a Ignacio que te comparta el archivo con permiso de edición.`);
+    $("pantallaRegistro").classList.add("oculto");
+    aviso(`No se pudo conectar con la planilla: ${e.message}.`);
   }
 }
 iniciar();
