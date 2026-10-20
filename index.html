@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Registro diario de máquinas · Forestal Río Claro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+/* =========================================================
+   COLORES (modo claro y oscuro)
+   ========================================================= */
+:root{
+  color-scheme: light;
+  --bosque:#1E3B2F;      /* verde pino, color principal */
+  --bosque-2:#2D5643;
+  --aserrin:#E9DCC4;     /* fondo cálido tipo madera cortada */
+  --corteza:#5A4433;
+  --papel:#FBF8F2;
+  --texto:#1B231F;
+  --texto-suave:#5E6862;
+  --linea:#D6CBB6;
+  --ok:#2E7D4F;
+  --alerta:#B5541C;
+  --sinprod-bg:#EDE7DC;
+  --superficie:#FFFFFF;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bosque:#9CC9AE; --bosque-2:#7DB394;
+    --aserrin:#2A2520; --corteza:#C9B396;
+    --papel:#171B19; --texto:#ECE8E1; --texto-suave:#A9B2AC;
+    --linea:#3A3F3B; --ok:#7FD0A0; --alerta:#F0A070;
+    --sinprod-bg:#24282A; --superficie:#1F2422;
+  }
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--papel); color:var(--texto);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:17px; line-height:1.45;
+}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--bosque-2);outline-offset:2px}
+
+/* ---------- Encabezado ---------- */
+header{
+  background:var(--bosque); color:#F4EFE6;
+  padding:20px 20px 0;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) header{background:#13261D} }
+.cabecera{max-width:880px;margin:0 auto}
+.fila-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{
+  font-family:"Barlow Condensed","Arial Narrow",sans-serif;
+  font-weight:700;font-size:2rem;line-height:1.05;margin:0;letter-spacing:.01em;
+}
+.usuario{font-size:.9rem;opacity:.85;display:flex;gap:10px;align-items:center}
+.btn-claro{
+  background:transparent;border:1px solid rgba(244,239,230,.5);color:#F4EFE6;
+  padding:6px 12px;border-radius:6px;cursor:pointer
+}
+.fecha-bloque{margin:18px 0 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.fecha-bloque label{font-weight:500}
+.fecha-bloque input{
+  background:#F4EFE6;color:#1B231F;border:0;border-radius:6px;
+  padding:8px 10px;font-size:1.05rem
+}
+
+/* ---------- Pestañas ---------- */
+.pestanas{display:flex;gap:4px;margin-top:20px;overflow-x:auto}
+.pestanas button{
+  background:transparent;border:0;color:#F4EFE6;opacity:.75;
+  font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.15rem;
+  padding:10px 16px 12px;border-radius:8px 8px 0 0;cursor:pointer;white-space:nowrap;
+  display:flex;align-items:center;gap:8px
+}
+.pestanas button[aria-selected="true"]{background:var(--papel);color:var(--texto);opacity:1}
+.punto{width:9px;height:9px;border-radius:50%;background:#C9A26B;display:inline-block}
+.punto.ok{background:#6FCF97}
+
+/* ---------- Contenido ---------- */
+main{max-width:880px;margin:0 auto;padding:20px}
+.aviso{
+  border-left:4px solid var(--alerta);background:var(--superficie);
+  padding:12px 14px;margin-bottom:18px;border-radius:0 6px 6px 0;color:var(--texto)
+}
+.aviso.info{border-left-color:var(--bosque-2)}
+.resumen{color:var(--texto-suave);margin:0 0 14px;font-size:.95rem}
+
+.maquinas{list-style:none;margin:0;padding:0;border-top:1px solid var(--linea)}
+.maquina{
+  display:grid;grid-template-columns:1fr minmax(170px,220px) auto;gap:12px;align-items:center;
+  padding:12px 4px;border-bottom:1px solid var(--linea)
+}
+.maquina .nombre{font-weight:600;font-size:1.05rem}
+.maquina .nombre small{display:block;font-weight:400;color:var(--texto-suave);font-size:.85rem}
+.maquina select{
+  width:100%;padding:10px 12px;border:1px solid var(--linea);border-radius:6px;
+  background:var(--superficie);font-size:1rem
+}
+.maquina.parada{background:var(--sinprod-bg)}
+.maquina.parada select{color:var(--texto-suave)}
+.btn-parar{
+  border:1px solid var(--linea);background:var(--superficie);border-radius:6px;
+  padding:9px 12px;cursor:pointer;font-size:.9rem;white-space:nowrap
+}
+.maquina.parada .btn-parar{border-color:var(--corteza);color:var(--corteza);font-weight:600}
+@media (max-width:560px){
+  .maquina{grid-template-columns:1fr auto}
+  .maquina select{grid-column:1 / -1;grid-row:2}
+}
+
+.acciones{
+  position:sticky;bottom:0;background:var(--papel);
+  padding:16px 0 calc(16px + env(safe-area-inset-bottom,0px));
+  display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--linea);margin-top:8px
+}
+.btn-guardar{
+  background:var(--bosque);color:#F4EFE6;border:0;border-radius:8px;
+  padding:13px 26px;font-size:1.05rem;font-weight:600;cursor:pointer
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .btn-guardar{color:#10201A} }
+.btn-guardar:disabled{opacity:.5;cursor:wait}
+.btn-sec{background:transparent;border:1px solid var(--linea);border-radius:8px;padding:12px 16px;cursor:pointer}
+.estado{font-size:.95rem}
+.estado.ok{color:var(--ok)} .estado.error{color:var(--alerta)}
+
+.login{
+  text-align:center;padding:60px 20px;max-width:440px;margin:0 auto
+}
+.login p{color:var(--texto-suave)}
+.oculto{display:none!important}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="cabecera">
+    <div class="fila-top">
+      <h1>Registro diario de máquinas</h1>
+      <div class="usuario" id="zonaUsuario"></div>
+    </div>
+    <div class="fecha-bloque" id="bloqueFecha">
+      <label for="fecha">Fecha</label>
+      <input type="date" id="fecha">
+    </div>
+    <div class="pestanas" role="tablist" id="pestanas"></div>
+  </div>
+</header>
+
+<main>
+  <div id="avisos"></div>
+
+  <section class="login oculto" id="pantallaLogin">
+    <p>Ingresa con tu cuenta de Forestal Río Claro para registrar lo que procesa cada máquina hoy.</p>
+    <button class="btn-guardar" id="btnLogin">Ingresar con Microsoft</button>
+  </section>
+
+  <section id="pantallaRegistro" class="oculto">
+    <p class="resumen" id="resumen"></p>
+    <ul class="maquinas" id="listaMaquinas"></ul>
+    <div class="acciones">
+      <button class="btn-guardar" id="btnGuardar">Guardar registro</button>
+      <button class="btn-sec" id="btnTodasParadas">Marcar todas sin producción</button>
+      <span class="estado" id="estado" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+</main>
+
+<script>
+/* =========================================================
+   CONFIGURACIÓN  —  ESTO ES LO ÚNICO QUE DEBES EDITAR
+   ========================================================= */
+const CONFIG = {
+  // Datos que entrega el área de TI al registrar la aplicación en Microsoft Entra ID (Azure).
+  // Mientras estén vacíos, la página funciona en MODO DEMO (no guarda nada).
+  clientId: "",          // "Id. de aplicación (cliente)"
+  tenantId: "",          // "Id. de directorio (inquilino)"
+
+  // Enlace al Excel en OneDrive (sin el ?web=1 del final)
+  archivoExcel: "https://gfrc-my.sharepoint.com/personal/isilva_gfrc_cl/Documents/InformesBI/Detalle%20maquina%20por%20dia.xlsx",
+
+  // Hoja del Excel donde están los largos permitidos (columna A, con encabezado)
+  hojaLargos: "Largos",
+
+  // Pestañas: el nombre de cada una debe ser IGUAL al nombre de la hoja en el Excel.
+  // Para agregar o quitar máquinas, edita estas listas.
+  pestanas: [
+    { hoja: "Polineras",  maquinas: ["Polinera 01","Polinera 02","Polinera 03","Polinera 04","Polinera 05","Polinera 06","Polinera 07","Polinera 08","Polinera 09"] },
+    { hoja: "Morbark",    maquinas: ["Morbark 01","Morbark 02","Morbark 03","Morbark 04","Morbark 06","Morbark 07","Morbark 08","Morbark 09"] },
+    { hoja: "Cilindrado", maquinas: ["Cilindrado 01","Cilindrado 02","Cilindrado 03","Cilindrado 04","Cilindrado 05","Cilindrado 06","Cilindrado 07","Cilindrado 08","Cilindrado 09"] },
+    { hoja: "Postes",     maquinas: ["Poste 01","Poste 02","Poste 03","Poste 04","Morbark 05"] }
+  ],
+
+  // Texto que se guarda cuando la máquina no está en uso (igual al que ya usas en el Excel)
+  textoSinProduccion: "Sin produccion",
+
+  // Largos de respaldo, por si no se pudiera leer la hoja "Largos"
+  largosRespaldo: [2.4,3,3.3,3.5,4,4.5,5,5.5,6,7,7.7,8,9,10,11,12,13,14,15]
+};
+/* ========================================================= */
+
+const MODO_DEMO = !CONFIG.clientId || !CONFIG.tenantId;
+const SIN = CONFIG.textoSinProduccion;
+const GRAPH = "https://graph.microsoft.com/v1.0";
+const ESCOPOS = ["User.Read", "Files.ReadWrite.All"];
+
+let msal = null, cuenta = null, rutaLibro = null;
+let largos = CONFIG.largosRespaldo.slice();
+let pestanaActual = 0;
+let datosHoja = {};        // hoja -> { filaInicio, valores }
+let seleccion = {};        // hoja -> { maquina: valor }
+let guardadas = {};        // hoja -> true si la fecha ya está registrada en el Excel
+
+const $ = id => document.getElementById(id);
+
+/* ---------- Utilidades de fecha (Excel guarda fechas como números) ---------- */
+function hoyISO(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function isoASerial(iso){
+  const [y,m,d] = iso.split("-").map(Number);
+  return Math.round((Date.UTC(y,m-1,d) - Date.UTC(1899,11,30)) / 86400000);
+}
+function celdaASerial(v){
+  if (typeof v === "number") return Math.floor(v);
+  if (typeof v === "string"){
+    const m = v.trim().match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+    if (m) return isoASerial(`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`);
+    const n = Number(v); if (!isNaN(n)) return Math.floor(n);
+  }
+  return null;
+}
+function fechaLarga(iso){
+  const [y,m,d] = iso.split("-").map(Number);
+  return new Date(y,m-1,d).toLocaleDateString("es-CL",{weekday:"long",day:"numeric",month:"long"});
+}
+const mostrarLargo = v => `${String(v).replace(".", ",")} m`;
+const normalizar = v => (v === null || v === undefined || v === "") ? "" :
+  (String(v).trim().toLowerCase() === SIN.toLowerCase() ? SIN : String(Number(v)));
+
+/* ---------- Avisos ---------- */
+function aviso(texto, tipo){
+  $("avisos").innerHTML = texto ? `<div class="aviso ${tipo||""}">${texto}</div>` : "";
+}
+function estado(texto, tipo){
+  const e = $("estado"); e.textContent = texto || ""; e.className = "estado " + (tipo||"");
+}
+
+/* ---------- Inicio de sesión con Microsoft ---------- */
+async function iniciarMsal(){
+  msal = new msalBrowser.PublicClientApplication({
+    auth:{
+      clientId: CONFIG.clientId,
+      authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+      redirectUri: window.location.origin + window.location.pathname
+    },
+    cache:{ cacheLocation:"localStorage" }
+  });
+  if (msal.initialize) await msal.initialize();
+  const r = await msal.handleRedirectPromise();
+  cuenta = r ? r.account : (msal.getAllAccounts()[0] || null);
+  if (cuenta) msal.setActiveAccount(cuenta);
+}
+async function token(){
+  try{
+    const r = await msal.acquireTokenSilent({ scopes:ESCOPOS, account:cuenta });
+    return r.accessToken;
+  }catch(e){
+    await msal.acquireTokenRedirect({ scopes:ESCOPOS, account:cuenta });
+    throw new Error("Redirigiendo para iniciar sesión…");
+  }
+}
+async function graph(ruta, opciones = {}){
+  const t = await token();
+  const r = await fetch(GRAPH + ruta, {
+    ...opciones,
+    headers:{ "Authorization":"Bearer " + t, "Content-Type":"application/json", ...(opciones.headers||{}) }
+  });
+  if (!r.ok){
+    let detalle = ""; try{ detalle = (await r.json()).error.message; }catch(_){}
+    const err = new Error(detalle || ("Error " + r.status)); err.status = r.status; throw err;
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+/* ---------- Acceso al Excel ---------- */
+function codificarEnlace(url){
+  const b64 = btoa(unescape(encodeURIComponent(url))).replace(/=+$/,"").replace(/\//g,"_").replace(/\+/g,"-");
+  return "u!" + b64;
+}
+async function ubicarLibro(){
+  const item = await graph(`/shares/${codificarEnlace(CONFIG.archivoExcel)}/driveItem?$select=id,parentReference`);
+  rutaLibro = `/drives/${item.parentReference.driveId}/items/${item.id}/workbook`;
+}
+const hojaURL = h => `${rutaLibro}/worksheets('${encodeURIComponent(h)}')`;
+
+async function leerHoja(hoja){
+  if (MODO_DEMO) return datosHoja[hoja] || { filaInicio:1, valores:[["Fecha","Maquina","Formato"]] };
+  const r = await graph(`${hojaURL(hoja)}/usedRange(valuesOnly=true)?$select=address,values`);
+  const inicio = Number((r.address.split("!")[1] || "A1").match(/\d+/)[0]);
+  return { filaInicio: inicio, valores: r.values };
+}
+async function leerLargos(){
+  if (MODO_DEMO) return;
+  try{
+    const r = await graph(`${hojaURL(CONFIG.hojaLargos)}/usedRange(valuesOnly=true)?$select=values`);
+    const lista = r.values.slice(1).map(f => f[0]).filter(v => v !== "" && !isNaN(Number(v))).map(Number);
+    if (lista.length) largos = lista;
+  }catch(e){ /* se usan los largos de respaldo */ }
+}
+
+/* Busca en la hoja las filas ya registradas para la fecha elegida */
+function filasDeLaFecha(datos, serial){
+  const mapa = {};
+  datos.valores.forEach((fila, i) => {
+    if (i === 0) return; // encabezado
+    if (celdaASerial(fila[0]) === serial && fila[1]) mapa[String(fila[1]).trim()] = { fila: datos.filaInicio + i, valor: fila[2] };
+  });
+  return mapa;
+}
+
+/* ---------- Pantalla ---------- */
+function dibujarPestanas(){
+  $("pestanas").innerHTML = CONFIG.pestanas.map((p,i) =>
+    `<button role="tab" aria-selected="${i===pestanaActual}" data-i="${i}">
+       <span class="punto ${guardadas[p.hoja] ? "ok" : ""}" aria-hidden="true"></span>${p.hoja}
+     </button>`).join("");
+  $("pestanas").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { pestanaActual = Number(b.dataset.i); dibujarPestanas(); cargarPestana(); });
+}
+
+function dibujarMaquinas(){
+  const p = CONFIG.pestanas[pestanaActual];
+  const sel = seleccion[p.hoja] || {};
+  const opciones = `<option value="">Elegir largo…</option>` +
+    largos.map(l => `<option value="${String(Number(l))}">${mostrarLargo(l)}</option>`).join("") +
+    `<option value="${SIN}">Sin producción</option>`;
+
+  $("listaMaquinas").innerHTML = p.maquinas.map((m, i) => {
+    const v = sel[m] || "";
+    return `<li class="maquina ${v===SIN ? "parada":""}" data-m="${m}">
+      <div class="nombre"><label for="sel${i}">${m}</label></div>
+      <select id="sel${i}">${opciones}</select>
+      <button class="btn-parar" type="button" aria-pressed="${v===SIN}">No está en uso</button>
+    </li>`;
+  }).join("");
+
+  $("listaMaquinas").querySelectorAll(".maquina").forEach(li => {
+    const m = li.dataset.m, s = li.querySelector("select"), b = li.querySelector(".btn-parar");
+    s.value = sel[m] || "";
+    s.onchange = () => { fijar(m, s.value); };
+    b.onclick = () => { const nuevo = (seleccion[p.hoja][m] === SIN) ? "" : SIN; fijar(m, nuevo); };
+  });
+  actualizarResumen();
+}
+
+function fijar(maquina, valor){
+  const hoja = CONFIG.pestanas[pestanaActual].hoja;
+  seleccion[hoja] = seleccion[hoja] || {};
+  seleccion[hoja][maquina] = valor;
+  const li = [...$("listaMaquinas").children].find(x => x.dataset.m === maquina);
+  if (li){
+    li.classList.toggle("parada", valor === SIN);
+    li.querySelector("select").value = valor;
+    li.querySelector(".btn-parar").setAttribute("aria-pressed", valor === SIN);
+  }
+  estado("");
+  actualizarResumen();
+}
+
+function actualizarResumen(){
+  const p = CONFIG.pestanas[pestanaActual];
+  const sel = seleccion[p.hoja] || {};
+  const llenas = p.maquinas.filter(m => sel[m]).length;
+  const paradas = p.maquinas.filter(m => sel[m] === SIN).length;
+  const fecha = $("fecha").value;
+  let t = `${fechaLarga(fecha)}. ${llenas} de ${p.maquinas.length} máquinas con dato`;
+  if (paradas) t += `, ${paradas} sin producción`;
+  t += guardadas[p.hoja] ? ". Este día ya está registrado; si cambias algo y guardas, se actualiza." : ".";
+  $("resumen").textContent = t;
+}
+
+async function cargarPestana(){
+  const p = CONFIG.pestanas[pestanaActual];
+  $("listaMaquinas").innerHTML = "";
+  $("resumen").textContent = "Cargando máquinas…";
+  try{
+    const datos = await leerHoja(p.hoja);
+    datosHoja[p.hoja] = datos;
+    const existentes = filasDeLaFecha(datos, isoASerial($("fecha").value));
+    seleccion[p.hoja] = {};
+    p.maquinas.forEach(m => { seleccion[p.hoja][m] = existentes[m] ? normalizar(existentes[m].valor) : ""; });
+    guardadas[p.hoja] = Object.keys(existentes).length > 0;
+    dibujarPestanas();
+    dibujarMaquinas();
+  }catch(e){
+    $("resumen").textContent = "";
+    aviso(`No se pudo leer la hoja <b>${p.hoja}</b> del Excel: ${e.message}. Revisa que tengas permiso de edición sobre el archivo.`);
+  }
+}
+
+/* ---------- Guardar en el Excel ---------- */
+async function guardar(){
+  const p = CONFIG.pestanas[pestanaActual];
+  const sel = seleccion[p.hoja] || {};
+  const faltan = p.maquinas.filter(m => !sel[m]);
+  if (faltan.length === p.maquinas.length){ estado("Elige un largo o «No está en uso» para al menos una máquina.", "error"); return; }
+  if (faltan.length && !confirm(`Faltan ${faltan.length} máquina(s) sin dato:\n${faltan.join(", ")}\n\n¿Guardar igual las demás?`)) return;
+
+  const btn = $("btnGuardar"); btn.disabled = true; estado("Guardando…");
+  const fecha = $("fecha").value, serial = isoASerial(fecha);
+
+  try{
+    // Se vuelve a leer la hoja justo antes de escribir, para no pisar datos de otra persona
+    const datos = await leerHoja(p.hoja);
+    const existentes = filasDeLaFecha(datos, serial);
+    let siguiente = datos.filaInicio + datos.valores.length;
+    const aActualizar = [], aAgregar = [];
+
+    p.maquinas.forEach(m => {
+      if (!sel[m]) return;
+      const formato = sel[m] === SIN ? SIN : Number(sel[m]);
+      const fila = [serial, m, formato];
+      if (existentes[m]) aActualizar.push({ fila: existentes[m].fila, valores: fila });
+      else aAgregar.push(fila);
+    });
+
+    if (MODO_DEMO){
+      aActualizar.forEach(u => { datos.valores[u.fila - datos.filaInicio] = u.valores; });
+      aAgregar.forEach(f => datos.valores.push(f));
+      datosHoja[p.hoja] = datos;
+    } else {
+      for (const u of aActualizar){
+        await graph(`${hojaURL(p.hoja)}/range(address='A${u.fila}:C${u.fila}')`, {
+          method:"PATCH", body: JSON.stringify({ values:[u.valores], numberFormat:[["dd-mm-yyyy","General","General"]] })
+        });
+      }
+      if (aAgregar.length){
+        const fin = siguiente + aAgregar.length - 1;
+        await graph(`${hojaURL(p.hoja)}/range(address='A${siguiente}:C${fin}')`, {
+          method:"PATCH", body: JSON.stringify({
+            values: aAgregar,
+            numberFormat: aAgregar.map(() => ["dd-mm-yyyy","General","General"])
+          })
+        });
+      }
+    }
+
+    guardadas[p.hoja] = true;
+    dibujarPestanas(); actualizarResumen();
+    const total = aActualizar.length + aAgregar.length;
+    estado(MODO_DEMO ? `Modo demo: ${total} máquina(s) registradas solo en pantalla.` :
+                       `Guardado en el Excel: ${total} máquina(s) de ${p.hoja}.`, "ok");
+  }catch(e){
+    estado("No se pudo guardar: " + e.message, "error");
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+/* ---------- Arranque ---------- */
+function mostrarRegistro(){
+  $("pantallaLogin").classList.add("oculto");
+  $("pantallaRegistro").classList.remove("oculto");
+  $("bloqueFecha").classList.remove("oculto");
+  $("pestanas").classList.remove("oculto");
+  dibujarPestanas();
+  cargarPestana();
+}
+
+async function iniciar(){
+  $("fecha").value = hoyISO();
+  $("fecha").onchange = () => { guardadas = {}; cargarPestana(); };
+  $("btnGuardar").onclick = guardar;
+  $("btnTodasParadas").onclick = () => {
+    if (confirm("¿Marcar todas las máquinas de esta pestaña como sin producción?"))
+      CONFIG.pestanas[pestanaActual].maquinas.forEach(m => fijar(m, SIN));
+  };
+
+  if (MODO_DEMO){
+    aviso("<b>Modo demo.</b> Esta página aún no está conectada al Excel: puedes probarla, pero no guarda nada. Se conecta al completar <code>clientId</code> y <code>tenantId</code> en la configuración.", "info");
+    $("zonaUsuario").textContent = "Demo";
+    mostrarRegistro();
+    return;
+  }
+
+  try{
+    await iniciarMsal();
+  }catch(e){
+    aviso("No se pudo iniciar el acceso con Microsoft: " + e.message); return;
+  }
+
+  if (!cuenta){
+    $("bloqueFecha").classList.add("oculto");
+    $("pestanas").classList.add("oculto");
+    $("pantallaLogin").classList.remove("oculto");
+    $("btnLogin").onclick = () => msal.loginRedirect({ scopes:ESCOPOS });
+    return;
+  }
+
+  $("zonaUsuario").innerHTML = `<span>${cuenta.name || cuenta.username}</span><button class="btn-claro" id="btnSalir">Salir</button>`;
+  $("btnSalir").onclick = () => msal.logoutRedirect({ account:cuenta });
+
+  try{
+    await ubicarLibro();
+    await leerLargos();
+    mostrarRegistro();
+  }catch(e){
+    aviso(`No se pudo abrir el Excel: ${e.message}. Pide a Ignacio que te comparta el archivo con permiso de edición.`);
+  }
+}
+iniciar();
+</script>
+</body>
+</html>
