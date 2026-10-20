@@ -498,7 +498,8 @@ async function iniciar(){
   try{
     await iniciarMsal();
   }catch(e){
-    aviso("No se pudo iniciar el acceso con Microsoft: " + e.message); return;
+    aviso("No se pudo iniciar el acceso con Microsoft (" + e.message + "). Presiona «Ingresar con Microsoft» para intentarlo de nuevo y, en la pantalla de permisos, elige «Aceptar».");
+    if (!clienteMsal) return;
   }
 
   if (!cuenta){
