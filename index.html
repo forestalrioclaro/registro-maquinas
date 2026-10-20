@@ -85,7 +85,18 @@ main{max-width:880px;margin:0 auto;padding:20px}
   padding:12px 14px;margin-bottom:18px;border-radius:0 6px 6px 0
 }
 .aviso.info{border-left-color:var(--azul)}
-.resumen{color:var(--gris);margin:0 0 14px;font-size:.95rem}
+.resumen{background:var(--superficie);border:1px solid var(--linea);border-left:5px solid var(--verde);border-radius:10px;padding:14px 16px;margin:0 0 14px}
+.res-fecha{color:var(--gris);font-size:.9rem;margin:0 0 6px}
+.res-fecha::first-letter{text-transform:uppercase}
+.res-principal{font-family:"Raleway","Lato",sans-serif;font-weight:800;font-size:1.15rem;margin:0}
+.res-num{color:var(--verde);font-size:1.6rem;margin-right:4px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0;padding:0;list-style:none}
+.chip{background:var(--verde-suave);border:1px solid #BFE9D2;border-radius:999px;padding:4px 12px;font-size:.95rem}
+.chip b{color:var(--verde)}
+.res-sec{color:var(--gris);font-size:.9rem;margin:10px 0 0}
+.vacio{padding:18px 14px;color:var(--gris)}
+.pie{max-width:880px;margin:0 auto;padding:4px 20px 28px;text-align:right}
+.pie a{color:var(--gris);font-size:.85rem}
 
 .maquinas{list-style:none;margin:0;padding:0;background:var(--superficie);border-radius:10px;border:1px solid var(--linea);overflow:hidden}
 .maquina{
@@ -150,7 +161,7 @@ main{max-width:880px;margin:0 auto;padding:20px}
   <div id="avisos"></div>
 
   <section id="pantallaRegistro" class="oculto">
-    <p class="resumen" id="resumen"></p>
+    <div class="resumen" id="resumen" aria-live="polite"></div>
     <ul class="maquinas" id="listaMaquinas"></ul>
     <div class="acciones">
       <button class="btn-guardar" id="btnGuardar">Guardar registro</button>
@@ -159,24 +170,28 @@ main{max-width:880px;margin:0 auto;padding:20px}
     </div>
   </section>
 </main>
+<footer class="pie"><a href="admin.html">Configuración</a></footer>
 
 <script>
 /* =========================================================
    CONFIGURACIÓN  —  ESTO ES LO ÚNICO QUE DEBES EDITAR
    Pega aquí la "URL de la aplicación web" de Apps Script (termina en /exec).
-   Las pestañas, máquinas y largos se editan en Codigo.gs, no aquí.
+   Las máquinas y los largos se manejan en el mantenedor (admin.html).
    ========================================================= */
 const URL_API = "https://script.google.com/macros/s/AKfycbwIznCxiVJh47D1WyLlV3PM3oUe0IfwABAqDS6FZjIYtvaLDjoBHMtz9419aYhkNJoO/exec";
 /* ========================================================= */
 
-let DATOS = null;     // pestañas, máquinas y largos que entrega la planilla
+let DATOS = null;     // áreas, máquinas y largos que entrega la planilla
 let SIN = "Sin produccion";
 let pestanaActual = 0;
 let seleccion = {};   // hoja -> { maquina: valor }
 let guardadas = {};   // hoja -> true si la fecha ya está registrada
-let fechaActual = "";  // siempre el día de hoy (aaaa-mm-dd)
+let visibles = {};    // hoja -> máquinas que se muestran (activas + las que tienen dato ese día)
+let fechaActual = ""; // fecha elegida (aaaa-mm-dd), por defecto hoy
+let ultimoHoy = "";   // último "hoy" conocido, para detectar el cambio de día
 
 const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
 
 /* Conversa con la planilla de Google (Codigo.gs) */
 async function api(parametros, cuerpo){
@@ -205,7 +220,8 @@ function fechaLarga(iso, conAnio){
   if (conAnio) opciones.year = "numeric";
   return new Date(y,m-1,d).toLocaleDateString("es-CL", opciones);
 }
-const mostrarLargo = v => `${String(v).replace(".", ",")} m`;
+const textoLargo = v => String(Number(v)).replace(".", ",");
+const mostrarLargo = v => `${textoLargo(v)} m`;
 const normalizar = v => (v === null || v === undefined || v === "") ? "" :
   (String(v).trim().toLowerCase() === SIN.toLowerCase() ? SIN : String(Number(v)));
 
@@ -220,7 +236,7 @@ function estado(texto, tipo){
 function dibujarPestanas(){
   $("pestanas").innerHTML = DATOS.pestanas.map((p,i) =>
     `<button role="tab" aria-selected="${i===pestanaActual}" data-i="${i}">
-       <span class="punto ${guardadas[p.hoja] ? "ok" : ""}" aria-hidden="true"></span>${p.hoja}
+       <span class="punto ${guardadas[p.hoja] ? "ok" : ""}" aria-hidden="true"></span>${esc(p.hoja)}
      </button>`).join("");
   $("pestanas").querySelectorAll("button").forEach(b =>
     b.onclick = () => { pestanaActual = Number(b.dataset.i); dibujarPestanas(); cargarPestana(); });
@@ -229,21 +245,30 @@ function dibujarPestanas(){
 function dibujarMaquinas(){
   const p = DATOS.pestanas[pestanaActual];
   const sel = seleccion[p.hoja] || {};
-  const opciones = `<option value="">Elegir largo…</option>` +
-    DATOS.largos.map(l => `<option value="${String(Number(l))}">${mostrarLargo(l)}</option>`).join("") +
-    `<option value="${SIN}">Sin producción</option>`;
+  const lista = visibles[p.hoja] || [];
+  if (!lista.length){
+    $("listaMaquinas").innerHTML = `<li class="vacio">No hay máquinas activas en ${esc(p.hoja)}. Puedes activarlas en Configuración.</li>`;
+    actualizarResumen();
+    return;
+  }
+  const base = p.largos.map(l => String(Number(l)));
 
-  $("listaMaquinas").innerHTML = p.maquinas.map((m, i) => {
+  $("listaMaquinas").innerHTML = lista.map((m, i) => {
     const v = sel[m] || "";
-    return `<li class="maquina ${v===SIN ? "parada" : (v ? "con-dato" : "")}" data-m="${m}">
-      <div class="nombre"><label for="sel${i}">${m}</label></div>
+    const largos = base.slice();
+    if (v && v !== SIN && !largos.includes(v)) largos.push(v);   // largo ya guardado que hoy no está habilitado
+    const opciones = `<option value="">Elegir largo…</option>` +
+      largos.map(l => `<option value="${l}">${mostrarLargo(l)}</option>`).join("") +
+      `<option value="${SIN}">Sin producción</option>`;
+    return `<li class="maquina ${v===SIN ? "parada" : (v ? "con-dato" : "")}" data-i="${i}">
+      <div class="nombre"><label for="sel${i}">${esc(m)}</label></div>
       <select id="sel${i}">${opciones}</select>
       <button class="btn-parar" type="button" aria-pressed="${v===SIN}">No está en uso</button>
     </li>`;
   }).join("");
 
   $("listaMaquinas").querySelectorAll(".maquina").forEach(li => {
-    const m = li.dataset.m, s = li.querySelector("select"), b = li.querySelector(".btn-parar");
+    const m = lista[Number(li.dataset.i)], s = li.querySelector("select"), b = li.querySelector(".btn-parar");
     s.value = sel[m] || "";
     s.onchange = () => fijar(m, s.value);
     b.onclick = () => fijar(m, (seleccion[p.hoja][m] === SIN) ? "" : SIN);
@@ -255,7 +280,8 @@ function fijar(maquina, valor){
   const hoja = DATOS.pestanas[pestanaActual].hoja;
   seleccion[hoja] = seleccion[hoja] || {};
   seleccion[hoja][maquina] = valor;
-  const li = [...$("listaMaquinas").children].find(x => x.dataset.m === maquina);
+  const i = (visibles[hoja] || []).indexOf(maquina);
+  const li = $("listaMaquinas").querySelector(`.maquina[data-i="${i}"]`);
   if (li){
     li.classList.toggle("parada", valor === SIN);
     li.classList.toggle("con-dato", !!valor && valor !== SIN);
@@ -266,32 +292,48 @@ function fijar(maquina, valor){
   actualizarResumen();
 }
 
+/* Resumen: máquinas operativas y cuántas hay en cada largo (solo los que no dan 0) */
 function actualizarResumen(){
   const p = DATOS.pestanas[pestanaActual];
   const sel = seleccion[p.hoja] || {};
-  const llenas = p.maquinas.filter(m => sel[m]).length;
-  const paradas = p.maquinas.filter(m => sel[m] === SIN).length;
-  let t = `${fechaLarga(fechaActual)}. ${llenas} de ${p.maquinas.length} máquinas con dato`;
-  if (paradas) t += `, ${paradas} sin producción`;
-  t += guardadas[p.hoja] ? ". Este día ya está registrado; si cambias algo y guardas, se actualiza." : ".";
-  $("resumen").textContent = t;
+  const lista = visibles[p.hoja] || [];
+  const operativas = lista.filter(m => sel[m] && sel[m] !== SIN);
+  const paradas = lista.filter(m => sel[m] === SIN).length;
+  const sinDato = lista.length - operativas.length - paradas;
+
+  const conteo = {};
+  operativas.forEach(m => { conteo[sel[m]] = (conteo[sel[m]] || 0) + 1; });
+  const chips = Object.keys(conteo).sort((a,b) => Number(a) - Number(b))
+    .map(l => `<li class="chip"><b>${conteo[l]}</b> en largo ${mostrarLargo(l)}</li>`).join("");
+
+  const n = operativas.length;
+  const otros = [];
+  if (paradas) otros.push(`${paradas} sin producción`);
+  if (sinDato) otros.push(`${sinDato} sin dato`);
+
+  $("resumen").innerHTML =
+    `<p class="res-fecha">${fechaLarga(fechaActual)}${guardadas[p.hoja] ? " · Este día ya está registrado; si cambias algo y guardas, se actualiza." : ""}</p>
+     <p class="res-principal"><span class="res-num">${n}</span>${n === 1 ? "máquina operativa" : "máquinas operativas"}${n ? ":" : ""}</p>
+     ${chips ? `<ul class="chips">${chips}</ul>` : ""}
+     ${otros.length ? `<p class="res-sec">${otros.join(" · ")}</p>` : ""}`;
 }
 
 async function cargarPestana(){
   const p = DATOS.pestanas[pestanaActual];
   $("listaMaquinas").innerHTML = "";
-  $("resumen").textContent = "Cargando máquinas…";
+  $("resumen").innerHTML = `<p class="res-fecha">Cargando máquinas…</p>`;
   aviso("");
   try{
     const existentes = await api({ accion:"leer", hoja:p.hoja, fecha:fechaActual });
+    visibles[p.hoja] = p.maquinas.filter(m => m.activa || m.nombre in existentes).map(m => m.nombre);
     seleccion[p.hoja] = {};
-    p.maquinas.forEach(m => { seleccion[p.hoja][m] = m in existentes ? normalizar(existentes[m]) : ""; });
+    visibles[p.hoja].forEach(m => { seleccion[p.hoja][m] = m in existentes ? normalizar(existentes[m]) : ""; });
     guardadas[p.hoja] = Object.keys(existentes).length > 0;
     dibujarPestanas();
     dibujarMaquinas();
   }catch(e){
-    $("resumen").textContent = "";
-    aviso(`No se pudo leer la hoja <b>${p.hoja}</b>: ${e.message}.`);
+    $("resumen").innerHTML = "";
+    aviso(`No se pudo leer la hoja <b>${esc(p.hoja)}</b>: ${esc(e.message)}.`);
   }
 }
 
@@ -299,15 +341,15 @@ async function cargarPestana(){
 async function guardar(){
   const p = DATOS.pestanas[pestanaActual];
   const sel = seleccion[p.hoja] || {};
-  const faltan = p.maquinas.filter(m => !sel[m]);
-  if (faltan.length === p.maquinas.length){ estado("Elige un largo o «No está en uso» para al menos una máquina.", "error"); return; }
+  const lista = visibles[p.hoja] || [];
+  const faltan = lista.filter(m => !sel[m]);
+  if (!lista.length || faltan.length === lista.length){ estado("Elige un largo o «No está en uso» para al menos una máquina.", "error"); return; }
   if (faltan.length && !confirm(`Faltan ${faltan.length} máquina(s) sin dato:\n${faltan.join(", ")}\n\n¿Guardar igual las demás?`)) return;
-
   if (fechaActual !== hoyISO() && !confirm(`Vas a guardar el registro del ${fechaLarga(fechaActual, true)}, que no es hoy. ¿Continuar?`)) return;
 
   const btn = $("btnGuardar"); btn.disabled = true; estado("Guardando…");
   const registros = {};
-  p.maquinas.forEach(m => { if (sel[m]) registros[m] = sel[m]; });
+  lista.forEach(m => { if (sel[m]) registros[m] = sel[m]; });
 
   try{
     const r = await api(null, { accion:"guardar", hoja:p.hoja, fecha:fechaActual, registros });
@@ -321,9 +363,7 @@ async function guardar(){
   }
 }
 
-/* ---------- Fecha: siempre el día de hoy ---------- */
-let ultimoHoy = "";    // último "hoy" conocido, para detectar el cambio de día
-
+/* ---------- Fecha: hoy por defecto, editable para corregir días anteriores ---------- */
 function fijarFecha(iso){
   fechaActual = iso;
   $("fecha").value = iso;
@@ -352,7 +392,6 @@ function revisarCambioDeDia(){
 
 /* ---------- Arranque ---------- */
 async function iniciar(){
-  // La fecha parte siempre en el día de hoy; se puede cambiar para corregir días anteriores
   ultimoHoy = hoyISO();
   $("fecha").max = ultimoHoy;
   fijarHoy();
@@ -368,15 +407,15 @@ async function iniciar(){
   $("btnGuardar").onclick = guardar;
   $("btnTodasParadas").onclick = () => {
     if (confirm("¿Marcar todas las máquinas de esta pestaña como sin producción?"))
-      DATOS.pestanas[pestanaActual].maquinas.forEach(m => fijar(m, SIN));
+      (visibles[DATOS.pestanas[pestanaActual].hoja] || []).forEach(m => fijar(m, SIN));
   };
 
   if (!URL_API){
     aviso("Esta página todavía no está conectada a la planilla de Google. Falta pegar la URL de Apps Script en <code>URL_API</code>.", "info");
     return;
   }
-  $("resumen").textContent = "Conectando con la planilla…";
   $("pantallaRegistro").classList.remove("oculto");
+  $("resumen").innerHTML = `<p class="res-fecha">Conectando con la planilla…</p>`;
   try{
     DATOS = await api({ accion:"config" });
     SIN = DATOS.sinProduccion;
@@ -384,7 +423,7 @@ async function iniciar(){
     cargarPestana();
   }catch(e){
     $("pantallaRegistro").classList.add("oculto");
-    aviso(`No se pudo conectar con la planilla: ${e.message}.`);
+    aviso(`No se pudo conectar con la planilla: ${esc(e.message)}.`);
   }
 }
 iniciar();
