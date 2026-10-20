@@ -112,6 +112,16 @@ main{max-width:880px;margin:0 auto;padding:20px}
 .fl-tit{min-width:210px;font-size:1.05rem}
 .fl-tit b{color:var(--verde);font-size:1.25rem}
 .fila-largo .chips{margin:0}
+/* ---------- Aviso flotante que bloquea la pantalla mientras se guarda ---------- */
+.bloqueo{position:fixed;inset:0;z-index:100;background:rgba(43,44,46,.45);display:flex;align-items:center;justify-content:center;padding:20px}
+.bloqueo-caja{background:var(--superficie);border-radius:12px;padding:26px 30px;min-width:250px;max-width:90vw;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.bloqueo-caja p{margin:14px 0 0;font-family:"Raleway","Lato",sans-serif;font-weight:800;font-size:1.15rem;color:var(--texto)}
+.bloqueo-caja small{display:block;color:var(--gris);margin-top:6px;font-size:.9rem}
+.giro{width:44px;height:44px;margin:0 auto;border:4px solid var(--verde-suave);border-top-color:var(--verde);border-radius:50%;animation:girar .8s linear infinite}
+.bloqueo.listo .giro{animation:none;border-color:var(--verde);background:var(--verde);position:relative}
+.bloqueo.listo .giro::after{content:"";position:absolute;left:13px;top:6px;width:10px;height:20px;border:solid #fff;border-width:0 4px 4px 0;transform:rotate(45deg)}
+.bloqueo.listo small{visibility:hidden}
+@keyframes girar{to{transform:rotate(360deg)}}
 .pie a{color:var(--gris);font-size:.85rem}
 
 .maquinas{list-style:none;margin:0;padding:0;background:var(--superficie);border-radius:10px;border:1px solid var(--linea);overflow:hidden}
@@ -190,6 +200,14 @@ main{max-width:880px;margin:0 auto;padding:20px}
 </main>
 <footer class="pie"><a href="admin.html">Configuración</a></footer>
 
+<div class="bloqueo oculto" id="bloqueo" role="alertdialog" aria-modal="true" aria-labelledby="bloqueoTexto">
+  <div class="bloqueo-caja">
+    <div class="giro" aria-hidden="true"></div>
+    <p id="bloqueoTexto">Guardando…</p>
+    <small>No cierres ni cambies de pestaña</small>
+  </div>
+</div>
+
 <script>
 /* =========================================================
    CONFIGURACIÓN  —  ESTO ES LO ÚNICO QUE DEBES EDITAR
@@ -249,6 +267,25 @@ function aviso(texto, tipo){
 function estado(texto, tipo){
   const e = $("estado"); e.textContent = texto || ""; e.className = "estado " + (tipo||"");
 }
+
+/* ---------- Aviso flotante: bloquea todo mientras se guarda ---------- */
+let guardando = false;
+function bloquear(texto){
+  guardando = true;
+  $("bloqueoTexto").textContent = texto;
+  $("bloqueo").classList.remove("oculto", "listo");
+  if (document.activeElement) document.activeElement.blur();
+}
+function desbloquear(exito){
+  return new Promise(listo => {
+    const cerrar = () => { $("bloqueo").classList.add("oculto"); guardando = false; listo(); };
+    if (!exito) return cerrar();
+    $("bloqueo").classList.add("listo");
+    $("bloqueoTexto").textContent = "Guardado";
+    setTimeout(cerrar, 900);
+  });
+}
+window.addEventListener("beforeunload", e => { if (guardando){ e.preventDefault(); e.returnValue = ""; } });
 
 /* ---------- Pantalla ---------- */
 function dibujarPestanas(){
@@ -346,8 +383,11 @@ async function cargarPestana(){
   $("listaMaquinas").innerHTML = "";
   $("resumen").innerHTML = `<p class="res-fecha">Cargando máquinas…</p>`;
   aviso("");
+  const pestanaPedida = pestanaActual, fechaPedida = fechaActual;
+  const vigente = () => pestanaPedida === pestanaActual && fechaPedida === fechaActual;
   try{
-    const existentes = await api({ accion:"leer", hoja:p.hoja, fecha:fechaActual });
+    const existentes = await api({ accion:"leer", hoja:p.hoja, fecha:fechaPedida });
+    if (!vigente()) return;   // el usuario ya cambió de pestaña o de fecha
     visibles[p.hoja] = p.maquinas.filter(m => m.activa || m.nombre in existentes).map(m => m.nombre);
     seleccion[p.hoja] = {};
     visibles[p.hoja].forEach(m => { seleccion[p.hoja][m] = m in existentes ? normalizar(existentes[m]) : ""; });
@@ -355,6 +395,7 @@ async function cargarPestana(){
     dibujarPestanas();
     dibujarMaquinas();
   }catch(e){
+    if (!vigente()) return;
     $("resumen").innerHTML = "";
     aviso(`No se pudo leer la hoja <b>${esc(p.hoja)}</b>: ${esc(e.message)}.`);
   }
@@ -427,6 +468,7 @@ async function cargarResumen(){
       pestanaActual = Number(c.dataset.i); dibujarPestanas(); cargarPestana();
     });
   }catch(e){
+    if (fechaPedida !== fechaActual || !esResumen()) return;
     caja.innerHTML = "";
     aviso(`No se pudo armar el resumen: ${esc(e.message)}.`);
   }
@@ -442,18 +484,22 @@ async function guardar(){
   if (faltan.length && !confirm(`Faltan ${faltan.length} máquina(s) sin dato:\n${faltan.join(", ")}\n\n¿Guardar igual las demás?`)) return;
   if (fechaActual !== hoyISO() && !confirm(`Vas a guardar el registro del ${fechaLarga(fechaActual, true)}, que no es hoy. ¿Continuar?`)) return;
 
-  const btn = $("btnGuardar"); btn.disabled = true; estado("Guardando…");
+  const btn = $("btnGuardar"); btn.disabled = true; estado("");
+  bloquear(`Guardando ${p.hoja}…`);
   const registros = {};
   lista.forEach(m => { if (sel[m]) registros[m] = sel[m]; });
 
+  let exito = false;
   try{
     const r = await api(null, { accion:"guardar", hoja:p.hoja, fecha:fechaActual, registros });
     guardadas[p.hoja] = true;
+    exito = true;
     dibujarPestanas(); actualizarResumen();
     estado(`Guardado: ${r.agregadas + r.actualizadas} máquina(s) de ${p.hoja}.`, "ok");
   }catch(e){
     estado("No se pudo guardar: " + e.message, "error");
   }finally{
+    await desbloquear(exito);
     btn.disabled = false;
   }
 }
