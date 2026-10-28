@@ -256,10 +256,19 @@ function fechaLarga(iso, conAnio){
   if (conAnio) opciones.year = "numeric";
   return new Date(y,m-1,d).toLocaleDateString("es-CL", opciones);
 }
-const textoLargo = v => String(Number(v)).replace(".", ",");
-const mostrarLargo = v => `${textoLargo(v)} m`;
+/* Un largo puede ser un número (2.4 → "2,4 m") o un nombre ("Punta") */
+const esNumero = v => v !== null && v !== undefined && String(v).trim() !== "" && !isNaN(Number(v));
+const textoLargo = v => esNumero(v) ? String(Number(v)).replace(".", ",") : String(v);
+const mostrarLargo = v => esNumero(v) ? `${textoLargo(v)} m` : String(v);
+const ordenFormato = (a, b) => {
+  const na = esNumero(a), nb = esNumero(b);
+  if (na && nb) return Number(a) - Number(b);
+  if (na) return -1;
+  if (nb) return 1;
+  return String(a).localeCompare(String(b), "es");
+};
 const normalizar = v => (v === null || v === undefined || v === "") ? "" :
-  (String(v).trim().toLowerCase() === SIN.toLowerCase() ? SIN : String(Number(v)));
+  (String(v).trim().toLowerCase() === SIN.toLowerCase() ? SIN : (esNumero(v) ? String(Number(v)) : String(v).trim()));
 
 function aviso(texto, tipo){
   $("avisos").innerHTML = texto ? `<div class="aviso ${tipo||""}">${texto}</div>` : "";
@@ -308,14 +317,14 @@ function dibujarMaquinas(){
     actualizarResumen();
     return;
   }
-  const base = p.largos.map(l => String(Number(l)));
+  const base = p.largos.map(l => esNumero(l) ? String(Number(l)) : String(l));
 
   $("listaMaquinas").innerHTML = lista.map((m, i) => {
     const v = sel[m] || "";
     const largos = base.slice();
     if (v && v !== SIN && !largos.includes(v)) largos.push(v);   // largo ya guardado que hoy no está habilitado
     const opciones = `<option value="">Elegir largo…</option>` +
-      largos.map(l => `<option value="${l}">${mostrarLargo(l)}</option>`).join("") +
+      largos.map(l => `<option value="${esc(l)}">${esc(mostrarLargo(l))}</option>`).join("") +
       `<option value="${SIN}">Sin producción</option>`;
     return `<li class="maquina ${v===SIN ? "parada" : (v ? "con-dato" : "")}" data-i="${i}">
       <div class="nombre"><label for="sel${i}">${esc(m)}</label></div>
@@ -360,8 +369,8 @@ function actualizarResumen(){
 
   const conteo = {};
   operativas.forEach(m => { conteo[sel[m]] = (conteo[sel[m]] || 0) + 1; });
-  const chips = Object.keys(conteo).sort((a,b) => Number(a) - Number(b))
-    .map(l => `<li class="chip"><b>${conteo[l]}</b> en largo ${mostrarLargo(l)}</li>`).join("");
+  const chips = Object.keys(conteo).sort(ordenFormato)
+    .map(l => `<li class="chip"><b>${conteo[l]}</b> en ${esNumero(l) ? "largo " : ""}${esc(mostrarLargo(l))}</li>`).join("");
 
   const n = operativas.length;
   const otros = [];
@@ -444,12 +453,12 @@ async function cargarResumen(){
       </button>`;
     }).join("");
 
-    const filas = Object.keys(porLargo).sort((a,b) => Number(a) - Number(b)).map(l => {
+    const filas = Object.keys(porLargo).sort(ordenFormato).map(l => {
       const n = Object.values(porLargo[l]).reduce((s, x) => s + x, 0);
       const chips = DATOS.pestanas.filter(p => porLargo[l][p.hoja])
         .map(p => `<li class="chip"><b>${porLargo[l][p.hoja]}</b> de ${esc(p.hoja)}</li>`).join("");
       return `<div class="fila-largo">
-        <div class="fl-tit"><b>${n}</b> ${n === 1 ? "máquina" : "máquinas"} en ${mostrarLargo(l)}</div>
+        <div class="fl-tit"><b>${n}</b> ${n === 1 ? "máquina" : "máquinas"} en ${esc(mostrarLargo(l))}</div>
         <ul class="chips">${chips}</ul>
       </div>`;
     }).join("");
