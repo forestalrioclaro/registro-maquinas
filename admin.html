@@ -207,10 +207,10 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--verde);cursor:poi
   <div id="pantallaAdmin" class="oculto">
     <section class="tarjeta">
       <h2>Largos por área</h2>
-      <p class="ayuda">Marca en qué área se muestra cada largo. Si una casilla está sin marcar, ese largo no aparece en la lista de esa área.</p>
+      <p class="ayuda">Marca en qué área se muestra cada largo. Si una casilla está sin marcar, ese largo no aparece en la lista de esa área. Puedes agregar largos en metros (2,7) o con nombre (Punta).</p>
       <div class="tabla-scroll"><table id="tablaLargos"></table></div>
       <div class="nuevo-largo">
-        <input type="text" inputmode="decimal" id="nuevoLargo" placeholder="Ej: 2,7" aria-label="Nuevo largo en metros">
+        <input type="text" id="nuevoLargo" maxlength="20" placeholder="Ej: 2,7 o Punta" aria-label="Nuevo largo, en metros o con nombre">
         <button class="btn-mini" id="btnAgregarLargo" type="button">Agregar largo</button>
       </div>
     </section>
@@ -249,7 +249,18 @@ let hayCambios = false;
 
 const $ = id => document.getElementById(id);
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
-const textoLargo = v => String(Number(v)).replace(".", ",");
+/* Un largo puede ser un número (2.4 → "2,4 m") o un nombre ("Punta") */
+const esNumero = v => v !== null && v !== undefined && String(v).trim() !== "" && !isNaN(Number(String(v).replace(",", ".")));
+const textoLargo = v => esNumero(v) ? String(Number(String(v).replace(",", "."))).replace(".", ",") : String(v);
+const mostrarLargo = v => esNumero(v) ? `${textoLargo(v)} m` : String(v);
+const claveLargo = v => esNumero(v) ? "n" + Number(String(v).replace(",", ".")) : "t" + String(v).trim().toLowerCase();
+const ordenFormato = (a, b) => {
+  const na = esNumero(a), nb = esNumero(b);
+  if (na && nb) return Number(String(a).replace(",", ".")) - Number(String(b).replace(",", "."));
+  if (na) return -1;
+  if (nb) return 1;
+  return String(a).localeCompare(String(b), "es");
+};
 
 async function api(cuerpo){
   let r;
@@ -291,8 +302,8 @@ function cargarDatos(d){
 function dibujarLargos(){
   const cab = `<thead><tr><th>Largo</th>${AREAS.map((a,j) =>
     `<th>${esc(a)}<button type="button" class="col-todo" data-col="${j}">marcar/desmarcar todo</button></th>`).join("")}</tr></thead>`;
-  const filas = largos.map((l,i) => `<tr><td>${textoLargo(l.largo)} m</td>${AREAS.map((a,j) =>
-    `<td><input type="checkbox" data-i="${i}" data-a="${j}" ${l.areas[a] ? "checked" : ""} aria-label="${textoLargo(l.largo)} m en ${esc(a)}"></td>`).join("")}</tr>`).join("");
+  const filas = largos.map((l,i) => `<tr><td>${esc(mostrarLargo(l.largo))}</td>${AREAS.map((a,j) =>
+    `<td><input type="checkbox" data-i="${i}" data-a="${j}" ${l.areas[a] ? "checked" : ""} aria-label="${esc(mostrarLargo(l.largo))} en ${esc(a)}"></td>`).join("")}</tr>`).join("");
   $("tablaLargos").innerHTML = cab + `<tbody>${filas}</tbody>`;
 
   $("tablaLargos").querySelectorAll("input[type=checkbox]").forEach(c => c.onchange = () => {
@@ -307,11 +318,20 @@ function dibujarLargos(){
 }
 
 function agregarLargo(){
-  const n = Math.round(Number($("nuevoLargo").value.replace(",", ".").trim()) * 100) / 100;
-  if (!(n > 0 && n < 100)){ estado("Escribe un largo válido en metros, por ejemplo 2,7.", "error"); return; }
-  if (largos.some(l => l.largo === n)){ estado(`El largo ${textoLargo(n)} m ya existe.`, "error"); return; }
+  const texto = $("nuevoLargo").value.trim().replace(/\s+/g, " ");
+  if (!texto){ estado("Escribe un largo en metros (por ejemplo 2,7) o un nombre (por ejemplo Punta).", "error"); return; }
+  let n;
+  if (esNumero(texto)){
+    n = Math.round(Number(texto.replace(",", ".")) * 100) / 100;
+    if (!(n > 0 && n < 100)){ estado("Escribe un largo válido en metros, por ejemplo 2,7.", "error"); return; }
+  } else {
+    if (texto.toLowerCase() === "sin produccion" || texto.toLowerCase() === "sin producción"){ estado("«Sin producción» ya existe como opción aparte.", "error"); return; }
+    if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .\-]+$/.test(texto)){ estado("El nombre solo puede tener letras, números, espacios, puntos o guiones.", "error"); return; }
+    n = texto;
+  }
+  if (largos.some(l => claveLargo(l.largo) === claveLargo(n))){ estado(`El largo ${mostrarLargo(n)} ya existe.`, "error"); return; }
   const areas = {}; AREAS.forEach(a => { areas[a] = true; });
-  largos.push({ largo:n, areas }); largos.sort((a,b) => a.largo - b.largo);
+  largos.push({ largo:n, areas }); largos.sort((a,b) => ordenFormato(a.largo, b.largo));
   $("nuevoLargo").value = "";
   marcarCambios(); dibujarLargos();
 }
